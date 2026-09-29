@@ -24,7 +24,7 @@ async function setup(initial: Subscription[], fail = false) {
 const item = (platform: string, id: string, checkedAt: number | null = null): Subscription => ({ platform, id, snapshot: null, error: null, checkedAt });
 it('opens the list and updates the elapsed check time every second', async () => {
   const { slot } = await setup([item('linear', 'ENG-1', Date.now() - 5000)]);
-  expect(screen.getByText('linear ENG-1')).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'ENG-1' })).toBeTruthy();
   expect(screen.getByText('checked: 5 seconds ago')).toBeTruthy();
   fireEvent.click(screen.getByText('1 following'));
   vi.useFakeTimers();
@@ -32,14 +32,33 @@ it('opens the list and updates the elapsed check time every second', async () =>
   act(() => { vi.advanceTimersByTime(2000); });
   expect(screen.getByText('checked: 7 seconds ago')).toBeTruthy();
   fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
-  expect(screen.queryByText('linear ENG-1')).toBeNull();
+  expect(screen.queryByRole('link', { name: 'ENG-1' })).toBeNull();
+  slot.lifecycle.unmount();
+});
+it('links resources before and after their first successful check', async () => {
+  const checked = { ...item('linear', 'ENG-2'), snapshot: { title: 'Issue', url: 'https://linear.app/team/issue/ENG-2/issue', state: 'open', updatedAt: '', fields: {} } };
+  const { slot } = await setup([item('github', 'org/repo#1'), item('linear', 'ENG-1'), checked]);
+  expect(screen.getByRole('link', { name: 'org/repo#1' }).getAttribute('href')).toBe('https://github.com/org/repo/pull/1');
+  expect(screen.getByRole('link', { name: 'ENG-1' }).getAttribute('href')).toBe('https://linear.app/issue/ENG-1');
+  expect(screen.getByRole('link', { name: 'ENG-2' }).getAttribute('href')).toBe(checked.snapshot.url);
+  for (const link of screen.getAllByRole('link')) {
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+  }
+  slot.lifecycle.unmount();
+});
+it('shows a merge glyph with the merged state', async () => {
+  const merged = { ...item('github', 'org/repo#1'), snapshot: { title: 'PR', url: 'https://github.com/org/repo/pull/1', state: 'merged', updatedAt: '', fields: {} } };
+  const { slot } = await setup([merged]);
+  expect(screen.getByText('merged').parentElement?.querySelector('svg')).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'org/repo#1' }).className).toContain('underline');
   slot.lifecycle.unmount();
 });
 it('removes one subscription and then unsubscribes all remaining platforms', async () => {
   const { slot, unsubscribe } = await setup([item('linear', 'ENG-1'), item('linear', 'ENG-2'), item('github', 'org/repo#1')]);
   expect(screen.getByText('checked: pending')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe linear ENG-1' }));
-  await waitFor(() => expect(screen.queryByText('linear ENG-1')).toBeNull());
+  await waitFor(() => expect(screen.queryByRole('link', { name: 'ENG-1' })).toBeNull());
   expect(unsubscribe).toHaveBeenCalledWith({ threadId: 't1', platform: 'linear', ids: ['ENG-1'] });
   fireEvent.click(screen.getByText('unsubscribe all'));
   await waitFor(() => expect(screen.queryByText('2 following')).toBeNull());
@@ -51,6 +70,6 @@ it('keeps subscriptions visible and displays removal failures', async () => {
   const { slot } = await setup([item('linear', 'ENG-1')], true);
   fireEvent.click(screen.getByText('unsubscribe all'));
   expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'Removal failed');
-  expect(screen.getByText('linear ENG-1')).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'ENG-1' })).toBeTruthy();
   slot.lifecycle.unmount();
 });

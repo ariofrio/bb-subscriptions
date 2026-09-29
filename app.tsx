@@ -3,6 +3,20 @@ import * as Popover from '@radix-ui/react-popover';
 import { definePluginApp, useRealtime, useRealtimeConnectionState, useRpc } from '@get-bb/plugin-sdk/app';
 import type { rpcContract } from './server';
 import type { Subscription } from './model';
+function resourceUrl(item: Subscription): string {
+  if (item.snapshot?.url) return item.snapshot.url;
+  if (item.platform === 'github') {
+    const [repo, number] = item.id.split('#');
+    return `https://github.com/${repo}/pull/${number}`;
+  }
+  return `https://linear.app/issue/${encodeURIComponent(item.id)}`;
+}
+function MergeIcon() {
+  return <svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="size-3.5 shrink-0">
+    <circle cx="4" cy="3" r="1.5" /><circle cx="4" cy="13" r="1.5" /><circle cx="12" cy="5" r="1.5" />
+    <path d="M4 4.5v7M12 6.5a5 5 0 0 1-5 5H5.5" />
+  </svg>;
+}
 function SubscriptionCount({ threadId }: { threadId: string }) {
   const rpc = useRpc<typeof rpcContract>();
   const [items, setItems] = useState<Subscription[]>([]);
@@ -58,8 +72,14 @@ function SubscriptionCount({ threadId }: { threadId: string }) {
         <ul className="max-h-72 overflow-y-auto p-1">
           {items.map(item => <li key={`${item.platform}:${item.id}`} className="flex items-center gap-2 rounded px-2 py-2 text-xs">
             <div className="min-w-0 flex-1">
-              <div className="truncate" title={item.snapshot?.title ?? item.id}>{item.platform} {item.id}</div>
-              <div className="truncate text-muted-foreground" title={item.error ?? item.snapshot?.state ?? 'pending'}>{item.error ?? item.snapshot?.state ?? 'pending'}</div>
+              <div className="flex min-w-0 items-baseline gap-1.5">
+                <span className="shrink-0 text-muted-foreground">{item.platform}</span>
+                <a href={resourceUrl(item)} target="_blank" rel="noopener noreferrer" className="truncate underline decoration-muted-foreground/60 underline-offset-2 hover:decoration-current focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2" title={item.snapshot?.title ?? item.id}>{item.id}</a>
+              </div>
+              <div className={`flex min-w-0 items-center gap-1 truncate ${item.error ? 'text-destructive' : item.snapshot?.state?.toLowerCase() === 'merged' ? 'text-purple-400' : 'text-muted-foreground'}`} title={item.error ?? item.snapshot?.state ?? 'pending'}>
+                {item.snapshot?.state?.toLowerCase() === 'merged' && !item.error && <MergeIcon />}
+                <span className="truncate">{item.error ?? item.snapshot?.state ?? 'pending'}</span>
+              </div>
             </div>
             <button type="button" disabled={busy} aria-label={`Unsubscribe ${item.platform} ${item.id}`} onClick={() => void unsubscribe([item])} className="shrink-0 rounded px-1.5 py-1 text-muted-foreground hover:bg-muted disabled:opacity-50">×</button>
           </li>)}
