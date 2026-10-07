@@ -10,7 +10,7 @@ const issue = {
 };
 const pr = {
   ...issue, __typename: 'PullRequest', title: 'Example PR', url: 'https://github.com/o/r/pull/1',
-  isDraft: false, headRefOid: '0123456789abcdef', reviewDecision: null,
+  mergeable: 'MERGEABLE', isDraft: false, headRefOid: '0123456789abcdef', reviewDecision: null,
   reviews: { totalCount: 0, nodes: [] }, commits: { nodes: [] },
 };
 const hosts: ReturnType<typeof createFakePluginHost>[] = [];

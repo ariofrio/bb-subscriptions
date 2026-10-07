@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, describe as describeTests, expect, it, vi } from 'vitest';
 import { execFile } from 'node:child_process';
 import { github } from './github';
 import { ProviderError } from './types';
@@ -40,13 +40,14 @@ it('reports closure reasons, reopening, new comments and edits to the latest com
 });
 it.each(['OPEN', 'CLOSED', 'MERGED'])('preserves PR snapshot fields for %s PRs', async state => {
   reply({ ...issue, __typename: 'PullRequest', url: 'https://github.com/o/r/pull/1', state,
-    isDraft: true, headRefOid: '0123456789abcdef', reviewDecision: null,
+    mergeable: 'MERGEABLE', isDraft: true, headRefOid: '0123456789abcdef', reviewDecision: null,
     reviews: { totalCount: 1, nodes: [{ state: 'APPROVED', submittedAt: null, author: null }] },
     commits: { nodes: [{ commit: { statusCheckRollup: { state: 'SUCCESS' } } }] },
   });
   expect((await github.fetch(['o/r#1'], ctx())).items.get('o/r#1')).toEqual({
     title: 'Fix login', url: 'https://github.com/o/r/pull/1', updatedAt: '2026-01-01',
     state: state === 'OPEN' ? 'draft' : state.toLowerCase(),
+    mergeability: state === 'OPEN' ? 'MERGEABLE' : undefined,
     fields: { commit: '0123456789ab', comments: '0', reviews: '1 (unknown: approved at pending)', 'review decision': '', checks: 'success', assignees: 'alice, zoe', labels: 'bug' },
   });
 });
@@ -55,4 +56,34 @@ it('returns a retryable error for an inaccessible or missing item', async () => 
   const error = (await github.fetch(['o/r#2'], ctx())).items.get('o/r#2');
   expect(error).toBeInstanceOf(ProviderError);
   expect((error as ProviderError).message).toContain('PR/issue access');
+});
+
+const pr = (mergeable: string, state = 'OPEN', isDraft = false) => ({
+  __typename: 'PullRequest' as const, url: 'https://github.com/o/r/pull/1', title: 'Example', state, isDraft, updatedAt: '2026-01-01', headRefOid: 'abcdef123456', reviewDecision: null as string | null, mergeable,
+  assignees: { nodes: [] }, labels: { nodes: [] }, comments: { totalCount: 0, nodes: [] },
+  reviews: { totalCount: 0, nodes: [] }, commits: { nodes: [] },
+});
+async function read(value: ReturnType<typeof pr>) {
+  reply(value);
+  const { items } = await github.fetch(['o/r#1'], { config: {}, signal: new AbortController().signal });
+  return items.get('o/r#1');
+}
+describeTests('GitHub mergeability', () => {
+  it.each(['MERGEABLE', 'CONFLICTING', 'UNKNOWN'])('queries and maps %s independently of checks and review requirements', async mergeable => {
+    const value = pr(mergeable);
+    value.reviewDecision = 'CHANGES_REQUESTED';
+    expect(await read(value)).toMatchObject({ state: 'open', mergeability: mergeable });
+    const [command, args] = vi.mocked(execFile).mock.calls[0];
+    expect(command).toBe('gh');
+    expect((args as string[]).find((arg: string) => arg.startsWith('query='))).toMatch(/\bmergeable\b/);
+  });
+  it('tracks draft conflicts, but omits mergeability for closed and merged PRs', async () => {
+    expect(await read(pr('CONFLICTING', 'OPEN', true))).toMatchObject({ state: 'draft', mergeability: 'CONFLICTING' });
+    for (const state of ['CLOSED', 'MERGED']) {
+      expect(await read(pr('CONFLICTING', state))).toMatchObject({ state: state.toLowerCase(), mergeability: undefined });
+    }
+  });
+  it('rejects an invalid mergeability response instead of recording a false resolution', async () => {
+    await expect(read(pr('BLOCKED'))).rejects.toThrow('Invalid option');
+  });
 });

@@ -15,7 +15,7 @@ export const githubQuery = `query SubscriptionGitHub($owner: String!, $repo: Str
       comments(last: 1) { totalCount nodes { updatedAt author { login } } }
     }
     ... on PullRequest {
-      title url state isDraft updatedAt headRefOid reviewDecision
+      title url state isDraft updatedAt headRefOid reviewDecision mergeable
       assignees(first: 50) { nodes { login } }
       labels(first: 100) { nodes { name } }
       comments(last: 1) { totalCount nodes { updatedAt author { login } } }
@@ -32,6 +32,7 @@ const commonSchema = z.object({
 });
 const issueSchema = commonSchema.extend({ __typename: z.literal('Issue'), stateReason: z.string().nullable() });
 const prSchema = commonSchema.extend({
+  mergeable: z.enum(['MERGEABLE', 'CONFLICTING', 'UNKNOWN']),
   __typename: z.literal('PullRequest'), isDraft: z.boolean(), headRefOid: z.string(), reviewDecision: z.string().nullable(),
   reviews: z.object({ totalCount: z.number(), nodes: z.array(z.object({ state: z.string(), submittedAt: z.string().nullable(), author: z.object({ login: z.string() }).nullable() })) }),
   commits: z.object({ nodes: z.array(z.object({ commit: z.object({ statusCheckRollup: z.object({ state: z.string() }).nullable() }) })) }),
@@ -63,6 +64,7 @@ export function toSnapshot(item: z.infer<typeof itemSchema>): Snapshot {
   return {
     title: item.title, url: item.url, updatedAt: item.updatedAt,
     state: item.state === 'OPEN' && item.isDraft ? 'draft' : item.state.toLowerCase(),
+    mergeability: item.state === 'OPEN' ? item.mergeable : undefined,
     fields: {
       commit: item.headRefOid.slice(0, 12),
       comments: fields.comments,
